@@ -1916,11 +1916,12 @@ function Interpreter:genertic_visit( node )
     error('visit_' .. node:_name_() .. ' method not found')
 end
 --
-function Interpreter:interpret( context, filterset, resourcelimit )
+function Interpreter:interpret( context, filterset, resourcelimit, filesystem )
     -- body
     self.interpretercontext = context or InterpreterContext:new({})
     self.filterset = filterset or FilterSet:new()
     self.resourcelimit = resourcelimit or ResourceLimit:new()
+    self.filesystem = filesystem or FileSystem:new()
     local tree = self.parser:document()
     return self:visit(tree)
 end
@@ -2382,28 +2383,34 @@ end
 function Interpreter:visit_Partial( node )
     -- body
     self.resourcelimit:check_subtemplate_num()
+    local filesystem = self.filesystem
     local t = node.parser_context
     local location = self:visit(node.location)
-    local file = FileSystem:new(location):genertic_get()
-    local lexer = Lexer:new(file)
-    local parser = Parser:new(lexer, node.parser_context)
-    local context = self.interpretercontext
-    if node.interpretercontext then
-        local temp = self:visit(node.interpretercontext)
-        if type(temp) == "table" then
-            context:newframe()
-            for k,v in pairs(temp) do
-                context:define_var(k, v)
+    local file = filesystem:genertic_get(location)
+
+    if file then
+        local lexer = Lexer:new(file)
+        local parser = Parser:new(lexer, node.parser_context)
+        local context = self.interpretercontext
+        if node.interpretercontext then
+            local temp = self:visit(node.interpretercontext)
+            if type(temp) == "table" then
+                context:newframe()
+                for k,v in pairs(temp) do
+                    context:define_var(k, v)
+                end
+            else
+                self:raise_error("Invalid Interpreter Context in INCLUDE tag", node, 'include_pos')
             end
-        else
-            self:raise_error("Invalid Interpreter Context in INCLUDE tag", node, 'include_pos')
         end
+        local interpreter = Interpreter:new(parser)
+        local result = interpreter:interpret(context, self.filterset, self.resourcelimit, self.filesystem)
+        context:destroyframe()
+        self.resourcelimit:check_length(#result)
+        return result
+    else
+        -- TODO: implement error handler for missing files or empty templates
     end
-    local interpreter = Interpreter:new(parser)
-    local result = interpreter:interpret(context, self.filterset, self.resourcelimit)
-    context:destroyframe()
-    self.resourcelimit:check_length(#result)
-    return result
 end
 --
 function Interpreter:visit_CycleLoop( node )
@@ -2547,23 +2554,23 @@ end
 -------------------------------------------------------------ParserContext end ---------------------------------------------------------
 -------------------------------------------------------------FileSystem begin ---------------------------------------------------------
 -- local FileSystem = {}
-function FileSystem:new( location )
+function FileSystem:new( get )
     -- body
     local instance = {}
     setmetatable(instance, {__index = FileSystem})
-    instance.location = location
     instance.text = nil
+    instance.get = get
     return instance
 end
 --
-function FileSystem:genertic_get( ... )
+function FileSystem:genertic_get( location )
     -- body
     if self.get and type(self.get) == "function" then
-        local status, err = pcall(self.get, self.location)
+        local status, err = pcall(self.get, location)
         if status then
             return err
         else
-            error("get template: " .. location .. " fail by user self defined get method" .. tostring(err))
+            error("get template: " .. location .. " fail by user self defined get method " .. tostring(err))
         end
     else
          error("method to get template file is not defined !!")
