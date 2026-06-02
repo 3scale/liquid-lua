@@ -16,6 +16,62 @@ local stringbyte = string.byte
 local stringchar = string.char
 local table_unpack = table.unpack
 
+local BYTE_LBRACE    = stringbyte("{")
+local BYTE_RBRACE    = stringbyte("}")
+local BYTE_PERCENT   = stringbyte("%")
+local BYTE_DASH      = stringbyte("-")
+local BYTE_DOT       = stringbyte(".")
+local BYTE_SQUOTE    = stringbyte("'")
+local BYTE_DQUOTE    = stringbyte('"')
+local BYTE_BACKSLASH = stringbyte("\\")
+local BYTE_EQ        = stringbyte("=")
+local BYTE_GT        = stringbyte(">")
+local BYTE_LT        = stringbyte("<")
+local BYTE_BANG      = stringbyte("!")
+local BYTE_PIPE      = stringbyte("|")
+local BYTE_COLON     = stringbyte(":")
+local BYTE_COMMA     = stringbyte(",")
+local BYTE_LPAREN    = stringbyte("(")
+local BYTE_RPAREN    = stringbyte(")")
+local BYTE_LSQUARE   = stringbyte("[")
+local BYTE_RSQUARE   = stringbyte("]")
+local BYTE_UNDERSCORE = stringbyte("_")
+local BYTE_0         = stringbyte("0")
+local BYTE_9         = stringbyte("9")
+local BYTE_a         = stringbyte("a")
+local BYTE_z         = stringbyte("z")
+local BYTE_A         = stringbyte("A")
+local BYTE_Z         = stringbyte("Z")
+local BYTE_SPACE     = 32
+local BYTE_TAB       = 9
+local BYTE_NL        = 10
+local BYTE_CR        = 13
+
+local ESCAPE_MAP = {
+    [stringbyte("a")]  = "\a",
+    [stringbyte("b")]  = "\b",
+    [stringbyte("f")]  = "\f",
+    [stringbyte("n")]  = "\n",
+    [stringbyte("r")]  = "\r",
+    [stringbyte("v")]  = "\v",
+    [BYTE_BACKSLASH]   = "\\",
+    [BYTE_DQUOTE]      = "\"",
+    [BYTE_SQUOTE]      = "\'",
+}
+
+local function is_digit(b)
+    return b and b >= BYTE_0 and b <= BYTE_9
+end
+
+local function is_alpha(b)
+    return b and ((b >= BYTE_a and b <= BYTE_z) or (b >= BYTE_A and b <= BYTE_Z))
+end
+
+local function is_whitespace(b)
+    return b and (b == BYTE_SPACE or b == BYTE_TAB or b == BYTE_NL or b == BYTE_CR
+                  or b == 12 or b == 11)
+end
+
 Liquid._VERSION = "0.1.2"
 
 --Truthy and falsy
@@ -237,7 +293,7 @@ function Lexer:new( text )
     instance.text = text
     instance.pos = 1
     instance.current_token = nil
-    instance.current_char = text:sub(1, 1)
+    instance.current_byte = stringbyte(text, 1)
     instance.text_length = #(text)
     -- 0 for raw string; 1 for liquid code
     instance.token_mode = RMODE
@@ -277,25 +333,25 @@ function Lexer:advance( ... )
     -- body
     self.pos = self.pos + 1
     if self.pos > self.text_length then
-        self.current_char = nil
+        self.current_byte = nil
     else
-        self.current_char = self.text:sub(self.pos, self.pos)
+        self.current_byte = stringbyte(self.text, self.pos)
     end
 end
 --
 function Lexer:rawstring( ... )
     -- num -> {'-'}(\d)*
     local i = self.pos
-    while self.current_char do
-        if self.current_char == '{' then
+    while self.current_byte do
+        if self.current_byte == BYTE_LBRACE then
             local t = self:peek(1)
-            if (t == '{') or (t == '%') then
+            if t == BYTE_LBRACE or t == BYTE_PERCENT then
                break
             end
         end
-        if self.current_char == '%' or self.current_char == '}' then
+        if self.current_byte == BYTE_PERCENT or self.current_byte == BYTE_RBRACE then
             local t = self:peek(1)
-            if t == '}' then
+            if t == BYTE_RBRACE then
                self:raise_error("unexpect escape tag_end \'%}\' or var_end \'}}\' in raw string ")
             end
         end
@@ -303,24 +359,20 @@ function Lexer:rawstring( ... )
     end
     --find tag/var start, so change token mode
     self.token_mode = CMODE
-    local result = nil
     -- deal with situation of document start with '{{' or '{%'
     if self.pos > i then
-      local result = self.text:sub(i, self.pos - 1)
-      return result
-    else
-      return result
+      return self.text:sub(i, self.pos - 1)
     end
 end
 --
 function Lexer:tag_start_wc( ... )
     -- body
     local i = self.pos
-    if self.current_char == '{' then
+    if self.current_byte == BYTE_LBRACE then
         local t = self:peek(1)
-        if t == '%' then
+        if t == BYTE_PERCENT then
             local c = self:peek(2)
-            if c == '-' then
+            if c == BYTE_DASH then
                 self:advance()
                 self:advance()
                 self:advance()
@@ -333,11 +385,11 @@ end
 function Lexer:var_start_wc( ... )
     -- body
     local i = self.pos
-    if self.current_char == '{' then
+    if self.current_byte == BYTE_LBRACE then
         local t = self:peek(1)
-        if t == '{' then
+        if t == BYTE_LBRACE then
             local c = self:peek(2)
-            if c == '-' then
+            if c == BYTE_DASH then
                 self:advance()
                 self:advance()
                 self:advance()
@@ -350,11 +402,11 @@ end
 function Lexer:tag_end_wc( ... )
     -- body
     local i = self.pos
-    if self.current_char == '-' then
+    if self.current_byte == BYTE_DASH then
         local t = self:peek(1)
-        if t == '%' then
+        if t == BYTE_PERCENT then
             local c = self:peek(2)
-            if c == '}' then
+            if c == BYTE_RBRACE then
                 self:advance()
                 self:advance()
                 self:advance()
@@ -367,11 +419,11 @@ end
 function Lexer:var_end_wc( ... )
     -- body
     local i = self.pos
-    if self.current_char == '-' then
+    if self.current_byte == BYTE_DASH then
         local t = self:peek(1)
-        if t == '}' then
+        if t == BYTE_RBRACE then
             local c = self:peek(2)
-            if c == '}' then
+            if c == BYTE_RBRACE then
                 self:advance()
                 self:advance()
                 self:advance()
@@ -384,9 +436,9 @@ end
 function Lexer:tag_end( ... )
     -- body
     local i = self.pos
-    if self.current_char == '%' then
+    if self.current_byte == BYTE_PERCENT then
         local t = self:peek(1)
-        if t == '}' then
+        if t == BYTE_RBRACE then
             self:advance()
             self:advance()
             return  self.text:sub(i, self.pos -1)
@@ -397,9 +449,9 @@ end
 function Lexer:var_end( ... )
     -- body
     local i = self.pos
-    if self.current_char == '}' then
+    if self.current_byte == BYTE_RBRACE then
         local t = self:peek(1)
-        if t == '}' then
+        if t == BYTE_RBRACE then
             self:advance()
             self:advance()
             return self.text:sub(i, self.pos -1)
@@ -410,11 +462,11 @@ end
 function Lexer:tag_start( ... )
     -- body
     local i = self.pos
-    if self.current_char == '{' then
+    if self.current_byte == BYTE_LBRACE then
         local t = self:peek(1)
-        if t == '%' then
+        if t == BYTE_PERCENT then
             local c = self:peek(2)
-            if c ~= '-' then
+            if c ~= BYTE_DASH then
                 self:advance()
                 self:advance()
                 return self.text:sub(i, self.pos -1)
@@ -426,11 +478,11 @@ end
 function Lexer:var_start( ... )
     -- body
     local i = self.pos
-    if self.current_char == '{' then
+    if self.current_byte == BYTE_LBRACE then
         local t = self:peek(1)
-        if t == '{' then
+        if t == BYTE_LBRACE then
             local c = self:peek(2)
-            if c ~= '-' then
+            if c ~= BYTE_DASH then
                 self:advance()
                 self:advance()
                 return  self.text:sub(i, self.pos -1)
@@ -441,32 +493,32 @@ end
 --
 function Lexer:num( ... )
     local i = self.pos
-    if self.current_char and self.current_char:find('-') then
+    if self.current_byte == BYTE_DASH then
         self:advance()
-        while self.current_char and self.current_char:find('%d') do
+        while is_digit(self.current_byte) do
             self:advance()
         end
         if (self.pos - 1) == i then
             return nil
         end
     end
-    while self.current_char and self.current_char:find('%d') do
+    while is_digit(self.current_byte) do
         self:advance()
     end
-    if self.current_char then
-        if  self.current_char:find('%.') then
+    if self.current_byte then
+        if self.current_byte == BYTE_DOT then
             local t = self:peek(1)
-            if t == "." then
+            if t == BYTE_DOT then
                 return self.text:sub(i, self.pos - 1)  -- may be a num in Range type
-            elseif t:find('%d') then
+            elseif is_digit(t) then
                 self:advance()
-                while self.current_char and self.current_char:find('%d') do  -- float number
+                while is_digit(self.current_byte) do  -- float number
                     self:advance()
                 end
             end
         end
-        if self.current_char then
-            if self.current_char:find('%a') then -- keep this condition ? ID token already be handled
+        if self.current_byte then
+            if is_alpha(self.current_byte) then -- keep this condition ? ID token already be handled
                 self:raise_error("expect a number, but got letter!")
             else
                 return self.text:sub(i, self.pos - 1)
@@ -481,138 +533,50 @@ end
 --
 function Lexer:string( ... )
     -- num -> "{a-zA-Z...}*"
+    local delimiter = self.current_byte
+    if delimiter ~= BYTE_SQUOTE and delimiter ~= BYTE_DQUOTE then
+        return
+    end
     local result = ''
-    if self.current_char and self.current_char:find('\'') then
-        self:advance()
-        while self.current_char do
-            if self.current_char:find('\\') then
-                local t = self:peek(1)
-                if t then
-                    if t == 'a' then
-                        self:advance()
-                        self:advance()
-                        result = result .. "\a"
-                    elseif t == 'b' then
-                        self:advance()
-                        self:advance()
-                        result = result .. "\b"
-                    elseif t == 'f' then
-                        self:advance()
-                        self:advance()
-                        result = result .. "\f"
-                    elseif t == 'n' then
-                        self:advance()
-                        self:advance()
-                        result = result .. "\n"
-                    elseif t == 'r' then
-                        self:advance()
-                        self:advance()
-                        result = result .. "\r"
-                    elseif t == 'v' then
-                        self:advance()
-                        self:advance()
-                        result = result .. "\v"
-                    elseif t == '\\' then
-                        self:advance()
-                        self:advance()
-                        result = result .. "\\"
-                    elseif t == '\"' then
-                        self:advance()
-                        self:advance()
-                        result = result .. "\""
-                    elseif t == '\'' then
-                        self:advance()
-                        self:advance()
-                        result = result .. "\'"
-                    elseif t == '\n' then
-                        self:advance()  -- line num debug info
-                        self:advance()
-                    elseif t == '\r' then
-                        self:advance()  -- line num debug info
-                        self:advance()
-                    else
-                        self:advance()  -- NO hex number? so just discard '\'
-                    end
+    self:advance()
+    while self.current_byte do
+        if self.current_byte == BYTE_BACKSLASH then
+            local t = self:peek(1)
+            if t then
+                local esc = ESCAPE_MAP[t]
+                if esc then
+                    self:advance()
+                    self:advance()
+                    result = result .. esc
+                elseif t == BYTE_NL or t == BYTE_CR then
+                    self:advance()  -- line num debug info
+                    self:advance()
                 else
-                    self:raise_error("unclosed string!")
+                    self:advance()  -- NO hex number? so just discard '\'
                 end
+            else
+                self:raise_error("unclosed string!")
             end
-            if self.current_char:find('\'') then
-                 self:advance()
-                 break
-            end
-            result = result .. self.current_char
-            self:advance()
         end
-        return result
-    end
-    if self.current_char and self.current_char:find('\"') then
+        if self.current_byte == delimiter then
+             self:advance()
+             break
+        end
+        result = result .. stringchar(self.current_byte)
         self:advance()
-        while self.current_char do
-            if self.current_char:find('\\') then
-                local t = self:peek(1)
-                if t then
-                    if t == 'a' then
-                        self:advance()
-                        result = result .. "\a"
-                    elseif t == 'b' then
-                        self:advance()
-                        result = result .. "\b"
-                    elseif t == 'f' then
-                        self:advance()
-                        result = result .. "\f"
-                    elseif t == 'n' then
-                        self:advance()
-                        result = result .. "\n"
-                    elseif t == 'r' then
-                        self:advance()
-                        result = result .. "\r"
-                    elseif t == 'v' then
-                        self:advance()
-                        result = result .. "\v"
-                    elseif t == '\\' then
-                        self:advance()
-                        result = result .. "\\"
-                    elseif t == '\"' then
-                        self:advance()
-                        result = result .. "\""
-                    elseif t == '\'' then
-                        self:advance()
-                        result = result .. "\'"
-                    elseif t == '\n' then
-                        self:advance()  -- line num debug info
-                    elseif t == '\r' then
-                        self:advance()  -- line num debug info
-                    else
-                        self:advance()  -- NO hex number? so just discard '\'
-                    end
-                else
-                    self:raise_error("unclosed string!")
-                end
-            end
-            if self.current_char:find('\"') then
-                 self:advance()
-                 break
-            end
-            result = result .. self.current_char
-            self:advance()
-        end
-        return result
     end
+    return result
 end
 --
 function Lexer:id( ... )
     local i = self.pos
-    if self.current_char and (self.current_char:find('%a')  or self.current_char:find('_')) then
+    if is_alpha(self.current_byte) or self.current_byte == BYTE_UNDERSCORE then
         self:advance()
-        while self.current_char do
-            if self.current_char:find('%a') then
-                self:advance()
-            elseif self.current_char:find('%d') then
-                self:advance()
-            elseif self.current_char:find('-') then
-                self:advance()
-            elseif self.current_char:find('_') then
+        while self.current_byte do
+            if is_alpha(self.current_byte)
+                or is_digit(self.current_byte)
+                or self.current_byte == BYTE_DASH
+                or self.current_byte == BYTE_UNDERSCORE then
                 self:advance()
             else
                 break
@@ -624,7 +588,7 @@ end
 --
 function Lexer:skip_whitespace( ... )
     -- body
-    while self.current_char and self.current_char:find('%s') do
+    while is_whitespace(self.current_byte) do
         self:advance()
     end
 end
@@ -633,15 +597,13 @@ function Lexer:peek( n )
     -- body
     local p = self.pos + n
     if p <= self.text_length then
-        return self.text:sub(p, p)
-    else
-        return nil
+        return stringbyte(self.text, p)
     end
 end
 --
 function Lexer:get_next_token( ... )
     -- body
-    while self.current_char do
+    while self.current_byte do
         if self.token_mode == RMODE then
             local result = self:rawstring()
             if result then
@@ -650,11 +612,12 @@ function Lexer:get_next_token( ... )
                 self.token_mode = CMODE
             end
         else
-            if self.current_char:find('%s') then
+            if is_whitespace(self.current_byte) then
                self:skip_whitespace()
                goto CONTINUE
             end
-            if self.current_char == '{' then
+            local b = self.current_byte
+            if b == BYTE_LBRACE then
                 local result = nil
                 result = self:tag_start()
                 if result then
@@ -674,7 +637,7 @@ function Lexer:get_next_token( ... )
                 end
                 self:raise_error("expect tag_start\'{%\' or var_start\'{{\', but got a lonely \'{\'")
             end
-            if self.current_char == '-' then
+            if b == BYTE_DASH then
                 local result = nil
                 result = self:tag_end_wc()
                 if result then
@@ -692,7 +655,7 @@ function Lexer:get_next_token( ... )
                 end
                 self:raise_error("expect tag_end\'-%}\' or var_end\'-}}\' or minus number, but got a lonely \'-\'")
             end
-            if self.current_char == '%' then
+            if b == BYTE_PERCENT then
                 local result = nil
                 result = self:tag_end()
                 if result then
@@ -701,7 +664,7 @@ function Lexer:get_next_token( ... )
                 end
                 self:raise_error("expect tag_end\'-%}\', but got a lonely \'%\'")
             end
-            if self.current_char == '}' then
+            if b == BYTE_RBRACE then
                 local result = nil
                 result = self:var_end()
                 if result then
@@ -710,7 +673,7 @@ function Lexer:get_next_token( ... )
                 end
                 self:raise_error("expect var_end\'}}\', but got a lonely \'%\'")
             end
-            if self.current_char:find('%d') then
+            if is_digit(b) then
                 local result = nil
                 result = self:num()
                 if result then
@@ -718,16 +681,16 @@ function Lexer:get_next_token( ... )
                 end
                 self:raise_error()
             end
-            if self.current_char:find('%a') or self.current_char:find('_') then
+            if is_alpha(b) or b == BYTE_UNDERSCORE then
                 local result = self:id()
                 return (KEYWORDS[result] or Token:new(ID, result))
             end
-            if self.current_char == '\''  or self.current_char == '\"' then
+            if b == BYTE_SQUOTE or b == BYTE_DQUOTE then
                 local result = self:string()
                 return Token:new(STRING, result)
             end
-            if self.current_char == '=' then
-                if self:peek(1) == '=' then
+            if b == BYTE_EQ then
+                if self:peek(1) == BYTE_EQ then
                     self:advance()
                     self:advance()
                     return Token:new(EQ, '==')
@@ -736,8 +699,8 @@ function Lexer:get_next_token( ... )
                     return Token:new(ASSIGNMENT, '=')
                 end
             end
-            if self.current_char == '>' then
-                if self:peek(1) == '=' then
+            if b == BYTE_GT then
+                if self:peek(1) == BYTE_EQ then
                     self:advance()
                     self:advance()
                     return Token:new(GE, '>=')
@@ -746,8 +709,8 @@ function Lexer:get_next_token( ... )
                     return Token:new(GT, '>')
                 end
             end
-            if self.current_char == '<' then
-                if self:peek(1) == '=' then
+            if b == BYTE_LT then
+                if self:peek(1) == BYTE_EQ then
                     self:advance()
                     self:advance()
                     return Token:new(LE, '<=')
@@ -756,8 +719,8 @@ function Lexer:get_next_token( ... )
                     return Token:new(LT, '<')
                 end
             end
-            if self.current_char == '.' then
-                if self:peek(1) == '.' then
+            if b == BYTE_DOT then
+                if self:peek(1) == BYTE_DOT then
                     self:advance()
                     self:advance()
                     return Token:new(DOTDOT, '..')
@@ -766,24 +729,24 @@ function Lexer:get_next_token( ... )
                     return Token:new(DOT, '.')
                 end
             end
-            if self.current_char == '(' then
+            if b == BYTE_LPAREN then
                 self:advance()
                 return Token:new(LPAREN, '(')
             end
-            if self.current_char == ')' then
+            if b == BYTE_RPAREN then
                 self:advance()
                 return Token:new(RPAREN, ')')
             end
-            if self.current_char == '[' then
+            if b == BYTE_LSQUARE then
                 self:advance()
                 return Token:new(LSBRACKET, '[')
             end
-            if self.current_char == ']' then
+            if b == BYTE_RSQUARE then
                 self:advance()
                 return Token:new(RSBRACKET, ']')
             end
-            if self.current_char == '!' then
-                if self:peek(1) == '=' then
+            if b == BYTE_BANG then
+                if self:peek(1) == BYTE_EQ then
                     self:advance()
                     self:advance()
                     return Token:new(NE, '!=')
@@ -791,15 +754,15 @@ function Lexer:get_next_token( ... )
                      self:raise_error("expect \'!=\', but got a lonely \'!\'")
                 end
             end
-            if self.current_char == '|' then
+            if b == BYTE_PIPE then
                 self:advance()
                 return Token:new(PIPE, '|')
             end
-            if self.current_char == ':' then
+            if b == BYTE_COLON then
                 self:advance()
                 return Token:new(COLON, ':')
             end
-            if self.current_char == ',' then
+            if b == BYTE_COMMA then
                 self:advance()
                 return Token:new(COMMA, ',')
             end
@@ -1443,6 +1406,7 @@ function Parser:andexper( ... )
     end
     return left
 end
+
 function Parser:relexper( ... )
     --[[ relexper : exper { EQ exper
                                                 | NE exper
