@@ -130,6 +130,16 @@ local special_chars = {
   [36] = true, -- byte for char $
 }
 
+local RELATION = {
+  [EQ] = true,
+  [NE] = true,
+  [GE] = true,
+  [GT] = true,
+  [LE] = true,
+  [LT] = true,
+  [CONTAINS] = true
+}
+
 local function sanitize_replace(str)
   local tbl = {stringbyte(str, 1, #str)}
   local result = {}
@@ -1442,7 +1452,6 @@ function Parser:relexper( ... )
                                                 | LT exper
                                                 | CONTAINS exper}
     ]]
-    local RELATION = {[EQ] = true, [NE] = true, [GE] = true, [GT] = true, [LE] = true, [LT] = true, [CONTAINS] = true}
     local pos_info = {}
     local left = self:exper()
     local token_type = self.current_token.token_type
