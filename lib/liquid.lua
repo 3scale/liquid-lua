@@ -15,6 +15,12 @@ local Nodetab = {}
 local stringbyte = string.byte
 local stringchar = string.char
 local table_unpack = table.unpack
+local table_concat = table.concat
+
+local ok, new_tab = pcall(require, "table.new")
+if not ok or type(new_tab) ~= "function" then
+    new_tab = function (narr, nrec) return {} end
+end
 
 local BYTE_LBRACE    = stringbyte("{")
 local BYTE_RBRACE    = stringbyte("}")
@@ -1983,15 +1989,23 @@ function Interpreter:visit_Range( node )
 end
 --
 function Interpreter:visit_Compoud( node )
-    -- body
+    local n = #node
+    if n == 0 then return '' end
+
+    if n == 1 then
+        local result = self:visit(node[1])
+        if result == nil then return '' end
+        return self:obj2str(result) or ''
+    end
+
     local output = {}
-    for k,v in ipairs(node) do
-        if self.interrupt_flag then
-            return self:safe_concat(output, '')
-        end
-        local result = self:visit(v)
+    local count = 1
+    for i = 1, n do
+        if self.interrupt_flag then break end
+        local result = self:visit(node[i])
         if result ~= nil then
-            table.insert(output, result)
+            output[count] = result
+            count = count + 1
         end
     end
     return self:safe_concat(output, '')
@@ -2754,14 +2768,15 @@ do
     end
 
     function Interpreter:safe_concat(t, d)
-        local tmp = {}
+        local n = #t
+        local tmp = new_tab(n, 0)
 
         -- string keys are ignored by concat anyway
-        for i,v in ipairs(t) do
-            tmp[i] = Interpreter:obj2str(v)
+        for i=1, n do
+            tmp[i] = Interpreter:obj2str(t[i])
         end
 
-        return table.concat(tmp, d)
+        return table_concat(tmp, d)
     end
 end
 ------------------------------------------------------------- helper methods end ---------------------------------------------------------
