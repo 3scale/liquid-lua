@@ -1206,10 +1206,12 @@ end
 function Parser:block( ... )
     -- document : (RAWSTRING | state)*
     local node = Compoud:new()
+    local n = #node
     while self.current_token.token_type ~= EOF do
         if self.current_token.token_type == RAWSTRING then
             local temp = RawStr:new(self.current_token, self.parser_context)
-            table.insert(node, temp)
+            node[n+1] = temp
+            n = n + 1
             self:eat(RAWSTRING)
         else
             if self.current_token.token_type == TAGSTART
@@ -1229,7 +1231,8 @@ function Parser:block( ... )
                      return node
                 end
                 local temp = self:tag()
-                table.insert(node, temp)
+                node[n+1] = temp
+                n = n + 1
             elseif self.current_token.token_type == VARSTART
                 or self.current_token.token_type == VARSTARTWC then
                 if self.current_token.token_type == VARSTARTWC then
@@ -1240,7 +1243,8 @@ function Parser:block( ... )
                 end
                 self:eat(self.current_token.token_type)
                 local temp = self:var()
-                table.insert(node, temp)
+                node[n+1] = temp
+                n = n + 1
             else
                 self:raise_error("expect tag_start: \'{%\' or \'{%-\' ; var_start \'{{ \' or \'{{-\'")
             end
@@ -1569,12 +1573,12 @@ function Parser:paramlist( ... )
     paramlist : factor (COMMA factor)*
     ]]
     local params = {}
-    local param = self:factor()
-    table.insert(params, param)
+    params[1] = self:factor()
+    local n = 2
     while self.current_token.token_type == COMMA do
         self:eat(COMMA)
-        param = self:factor()
-        table.insert(params, param)
+        params[n] = self:factor()
+        n = n + 1
     end
     return params
 end
@@ -1977,9 +1981,11 @@ function Interpreter:visit_Range( node )
             return({from})
         else
             local result = {}
+            local n = 1
             for k = from, to, 1 do
                 self.resourcelimit:check_loopcount()
-                table.insert(result, k)
+                result[n] = k
+                n = n + 1
             end
             return(result)
         end
@@ -2402,11 +2408,13 @@ function Interpreter:visit_Filter( node)
         self:raise_error("cannot find filter: " .. node.filter_name, node, 'filter_name')
     end
 
-    local params = {}
-    for i,v in ipairs(node.params) do
-        table.insert(params, self:visit(v))
+    local params = node.params
+    local n = #params
+    local resolved = new_tab(n, 0)
+    for i = 1, n do
+        resolved[i] = self:visit(params[i])
     end
-    local status, err = pcall(filter, table.unpack(params))
+    local status, err = pcall(filter, table.unpack(resolved))
     if status then
         return err
     else
@@ -2451,7 +2459,7 @@ function Interpreter:visit_CycleLoop( node )
     local length = #(node.elementarray)
     local cycle_value = {}
     for i,v in ipairs(node.elementarray) do
-        table.insert(cycle_value, self:visit(v))
+        cycle_value[i] = self:visit(v)
     end
     local obj = {["_group_name"] = group_name, ["_cycle_value"] = cycle_value}
     -- get json string as index
@@ -2523,7 +2531,7 @@ function InterpreterContext:new( context )
     if type(context) ~= "table" then
         error("Initilied fail! context should be a table type ")
     end
-    table.insert(instance.stackframe, context)
+    instance.stackframe[1] = context
     return instance
 end
 --
@@ -2847,12 +2855,15 @@ local function last( a )
 end
 local function concat( a, b)
     -- body
+    local n = 1
     local temp = {}
     for i,v in ipairs(iterator(a)) do
-        table.insert(temp, v)
+        temp[n] = v
+        n = n + 1
     end
     for i,v in ipairs(iterator(b)) do
-        table.insert(temp, v)
+        temp[n] = v
+        n = n + 1
     end
     return temp
 end
@@ -2864,7 +2875,7 @@ local function map( a, map_field)
     -- body
     local temp = {}
     for i,v in ipairs(a) do
-        table.insert(temp, v[map_field])
+        temp[i] = v[map_field]
     end
     return join(temp, '')
 end
@@ -2873,8 +2884,10 @@ local function reverse( a )
     local temp = {}
     local it = iterator(a)
     local num = size(a)
+    local n = 1
     for k = num, 1, -1 do
-        table.insert(temp, it[k])
+        temp[n] = it[k]
+        n = n + 1
     end
     return temp
 end
@@ -2883,7 +2896,7 @@ local function sort( a, sort_field)
     -- body
     local t = {}
     for i,v in ipairs(iterator(a)) do
-        table.insert(t, v)
+        t[i] = v
     end
     if not sort_field then
         table.sort(t)
@@ -2898,11 +2911,13 @@ local function uniq( a )
     -- body
     local t = {}
     local result = {}
+    local n = 1
     for i,v in ipairs(iterator(a)) do
         local k = cjson.encode(v)
         if not t[k] then
             t[k] = true
-            table.insert(result, v)
+            result[n] = v
+            n = n + 1
         end
     end
     return result
