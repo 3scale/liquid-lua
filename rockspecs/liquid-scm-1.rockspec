@@ -7,7 +7,7 @@ source = {
 description = {
    summary = "A lua implementation of liquid for OpenResty platform.",
    detailed = "Since liquid markup language has no its official language specification document , liquid-lua adopts a classic lexer/parser/interpreter implementation approch and comes up with a strict error mode.",
-   homepage = "https://github.com/chenxianyu2015/liquid-lua",
+   homepage = "https://github.com/3scale/liquid-lua",
    license = "BSD-2-Clause"
 }
 dependencies = {
